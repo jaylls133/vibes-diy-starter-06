@@ -2,17 +2,35 @@ import React, { useState, useRef } from "react";
 import { useFireproof } from "use-fireproof";
 import { callAI } from "call-ai";
 
+// Define interfaces for our document types
+interface JobDocument {
+  _id?: string;
+  title: string;
+  category: string;
+  description: string;
+  location: string;
+  budget: string;
+  budgetType: string;
+  date: string;
+  time: string;
+  status: string;
+  createdAt: number;
+  _files?: {
+    jobImage?: File;
+  };
+}
+
 const JobPosterApp = () => {
   const { database, useLiveQuery, useDocument } = useFireproof("local-gig-connect");
   const fileInputRef = useRef(null);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("post");
-  const [showJobDetails, setShowJobDetails] = useState(null);
+  const [showJobDetails, setShowJobDetails] = useState<JobDocument | null>(null);
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
 
   // Job form document
-  const { doc: jobForm, merge: mergeJobForm, submit: submitJob, reset: resetForm } = useDocument({
+  const { doc: jobForm, merge: mergeJobForm, submit: submitJob, reset: resetForm } = useDocument<JobDocument>({
     title: "",
     category: "",
     description: "",
@@ -27,7 +45,7 @@ const JobPosterApp = () => {
   });
 
   // Get all jobs, sorted by creation date (newest first)
-  const { docs: jobs } = useLiveQuery("createdAt", { descending: true });
+  const { docs } = useLiveQuery("createdAt", { descending: true });
 
   const categories = [
     "Plumbing", 
@@ -73,7 +91,9 @@ const JobPosterApp = () => {
       Keep it under 200 words and make it professional but approachable.`;
 
       const response = await callAI(prompt);
-      mergeJobForm({ description: response });
+      // Convert response to string if it's not already
+      const responseText = typeof response === "string" ? response : JSON.stringify(response);
+      mergeJobForm({ description: responseText });
     } catch (error) {
       console.error("Error generating description:", error);
       alert("Failed to generate job description. Please try again or write your own.");
@@ -121,7 +141,9 @@ const JobPosterApp = () => {
         }
       });
 
-      const parsedData = JSON.parse(demoData);
+      // Convert to string and parse if needed
+      const demoDataText = typeof demoData === "string" ? demoData : JSON.stringify(demoData);
+      const parsedData = JSON.parse(demoDataText);
       
       for (const job of parsedData.jobs) {
         await database.put({
@@ -396,7 +418,7 @@ const JobPosterApp = () => {
                       <h4 className="font-bold mb-2" style={{color: "#242424"}}>Attached Image</h4>
                       <div className="border-2 border-[#ffd670] rounded-lg overflow-hidden">
                         <img 
-                          src={URL.createObjectURL(showJobDetails._files.jobImage)} 
+                          src={URL.createObjectURL(showJobDetails._files.jobImage instanceof File ? showJobDetails._files.jobImage : new Blob())} 
                           alt="Job image" 
                           className="w-full max-h-80 object-contain" 
                         />
@@ -437,7 +459,7 @@ const JobPosterApp = () => {
               </div>
             ) : (
               <>
-                {jobs.length === 0 ? (
+                {docs.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-gray-500 mb-4">No jobs posted yet</p>
                     <button
@@ -449,51 +471,54 @@ const JobPosterApp = () => {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {jobs.map((job) => (
-                      <div 
-                        key={job._id} 
-                        className="border-4 border-[#70d6ff] rounded-lg p-4 hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-bold text-lg" style={{color: "#242424"}}>{job.title}</h3>
-                            <p className="text-gray-700 line-clamp-2">{job.description}</p>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-                              <p className="text-sm text-gray-600"><span className="font-medium">Category:</span> {job.category}</p>
-                              <p className="text-sm text-gray-600"><span className="font-medium">Location:</span> {job.location}</p>
-                              {job.budget && (
-                                <p className="text-sm text-gray-600">
-                                  <span className="font-medium">Budget:</span> ${job.budget} ({job.budgetType})
-                                </p>
-                              )}
+                    {docs.map((doc) => {
+                      const job = doc as unknown as JobDocument;
+                      return (
+                        <div 
+                          key={job._id} 
+                          className="border-4 border-[#70d6ff] rounded-lg p-4 hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex justify-between">
+                            <div className="flex-1">
+                              <h3 className="font-bold text-lg" style={{color: "#242424"}}>{job.title}</h3>
+                              <p className="text-gray-700 line-clamp-2">{job.description}</p>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                                <p className="text-sm text-gray-600"><span className="font-medium">Category:</span> {job.category}</p>
+                                <p className="text-sm text-gray-600"><span className="font-medium">Location:</span> {job.location}</p>
+                                {job.budget && (
+                                  <p className="text-sm text-gray-600">
+                                    <span className="font-medium">Budget:</span> ${job.budget} ({job.budgetType})
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          
-                          <div className="ml-4 flex flex-col items-end">
-                            <span className={`px-3 py-1 rounded-full text-white text-sm mb-2 ${
-                              job.status === "Open" ? "bg-green-500" :
-                              job.status === "In Progress" ? "bg-blue-500" :
-                              job.status === "Completed" ? "bg-purple-500" : 
-                              "bg-gray-500"
-                            }`}>{job.status}</span>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setShowJobDetails(job)}
-                                className="text-sm px-3 py-1 bg-[#70d6ff] text-white rounded hover:bg-[#ff70a6] transition-colors"
-                              >
-                                View
-                              </button>
-                              <button
-                                onClick={() => deleteJob(job._id)}
-                                className="text-sm px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-                              >
-                                Delete
-                              </button>
+                            
+                            <div className="ml-4 flex flex-col items-end">
+                              <span className={`px-3 py-1 rounded-full text-white text-sm mb-2 ${
+                                job.status === "Open" ? "bg-green-500" :
+                                job.status === "In Progress" ? "bg-blue-500" :
+                                job.status === "Completed" ? "bg-purple-500" : 
+                                "bg-gray-500"
+                              }`}>{job.status}</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setShowJobDetails(job)}
+                                  className="text-sm px-3 py-1 bg-[#70d6ff] text-white rounded hover:bg-[#ff70a6] transition-colors"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => deleteJob(job._id)}
+                                  className="text-sm px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </>

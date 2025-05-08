@@ -3,6 +3,12 @@ import React, { useState } from "react";
 import { useFireproof } from "use-fireproof";
 import { callAI } from "call-ai";
 
+interface Note {
+  type: string;
+  content: string;
+  createdAt: string;
+}
+
 const ExampleUsage: React.FC = () => {
   const { database, useLiveQuery } = useFireproof("my-app");
   const [result, setResult] = useState<string>("");
@@ -13,12 +19,14 @@ const ExampleUsage: React.FC = () => {
     setLoading(true);
     try {
       const response = await callAI("Summarize the key benefits of local-first applications");
-      setResult(response);
+      // Convert response to string if it's not already
+      const responseText = typeof response === "string" ? response : JSON.stringify(response);
+      setResult(responseText);
       
       // Save to Fireproof
       await database.put({
         type: "note",
-        content: response,
+        content: responseText,
         createdAt: new Date().toISOString()
       });
     } catch (error) {
@@ -53,7 +61,7 @@ const ExampleUsage: React.FC = () => {
           <ul className="space-y-2">
             {docs.map((doc) => (
               <li key={doc._id} className="p-2 bg-gray-50 rounded">
-                {doc.content}
+                {(doc as unknown as Note).content}
               </li>
             ))}
           </ul>
